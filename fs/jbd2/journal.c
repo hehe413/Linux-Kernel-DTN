@@ -453,15 +453,19 @@ repeat:
 		jh_in->b_frozen_triggers = jh_in->b_triggers;
 	}
 
+	/*##############BY_DOUBLE_HH_BEGIN###############*/
 	/*
 	 * Did we need to do an escaping?  Now we've done all the
 	 * copying, we can finally do so.
+	 * 当要往日志中写一块普通的数据块时，如果发现其开头的4 个字节
+	 * 恰好是0xc03b3998U，则将该4 个字节改写成0，
 	 */
-	if (do_escape) {
-		mapped_data = kmap_atomic(new_page);
-		*((unsigned int *)(mapped_data + new_offset)) = 0;
-		kunmap_atomic(mapped_data);
-	}
+//	if (do_escape) {
+//		mapped_data = kmap_atomic(new_page);
+//		*((unsigned int *)(mapped_data + new_offset)) = 0;
+//		kunmap_atomic(mapped_data);
+//	}
+	/*##############BY_DOUBLE_HH_END###############*/
 
 	set_bh_page(new_bh, new_page, new_offset);
 	new_bh->b_size = bh_in->b_size;

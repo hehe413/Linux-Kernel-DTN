@@ -4749,6 +4749,8 @@ static int ext4_load_journal(struct super_block *sb,
 
 	BUG_ON(!ext4_has_feature_journal(sb));
 
+	printk (KERN_DEBUG "%s Start\n",__func__);	
+
 	if (journal_devnum &&
 	    journal_devnum != le32_to_cpu(es->s_journal_dev)) {
 		ext4_msg(sb, KERN_INFO, "external journal device major/minor "

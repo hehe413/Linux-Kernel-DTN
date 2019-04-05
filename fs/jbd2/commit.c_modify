@@ -29,50 +29,17 @@
 #include <linux/nvme_ioctl.h>
 #include <linux/buffer_head.h>
 
-//void DTN_commit(struct block_device *bdev ,unsigned int t_tid)
-//{
-//	struct nvme_user_io cmd = {
-//		/*使用一个新的IO command opcode,表示commit操作*/
-//		.opcode = 0x03,
-//		/*借助reftag来传递t_tid，在底层，只要检测到opcode == 0x03,
-//		* 则只要通过reftag字段取到这个t_tid*/
-//		.reftag = t_tid,
-//	};	
-//	//bdev->bd_disk->fops->ioctl(bdev ,666 ,NVME_IOCTL_SUBMIT_IO ,&cmd);
-//	__blkdev_driver_ioctl(bdev ,666 ,NVME_IOCTL_SUBMIT_IO ,(unsigned long)&cmd);
-//}
-
-int DTN_commit(struct block_device *bdev, gfp_t gfp_mask ,unsigned int t_tid)
+void DTN_commit(struct block_device *bdev ,unsigned int t_tid)
 {
-	struct request_queue *q;
-	struct bio *bio;
-	int ret = 0;
-
-	if (bdev->bd_disk == NULL)
-		return -ENXIO;
-
-	q = bdev_get_queue(bdev);
-	if (!q)
-		return -ENXIO;
-
-	/*
-	 * some block devices may not have their queue correctly set up here
-	 * (e.g. loop device without a backing file) and so issuing a flush
-	 * here will panic. Ensure there is a request function before issuing
-	 * the flush.
-	 */
-	if (!q->make_request_fn)
-		return -ENXIO;
-
-	bio = bio_alloc(gfp_mask, 0);
-	bio_set_dev(bio, bdev);
-	bio->bi_opf = REQ_OP_FLUSH | REQ_SYNC;
-	bio->t_tid = t_tid;
-
-	ret = submit_bio_wait(bio);
-
-	bio_put(bio);
-	return ret;
+	struct nvme_user_io cmd = {
+		/*使用一个新的IO command opcode,表示commit操作*/
+		.opcode = 0x03,
+		/*借助reftag来传递t_tid，在底层，只要检测到opcode == 0x03,
+		* 则只要通过reftag字段取到这个t_tid*/
+		.reftag = t_tid,
+	};	
+	//bdev->bd_disk->fops->ioctl(bdev ,666 ,NVME_IOCTL_SUBMIT_IO ,&cmd);
+	__blkdev_driver_ioctl(bdev ,666 ,NVME_IOCTL_SUBMIT_IO ,(unsigned long)&cmd);
 }
 
 void DTN_write(struct buffer_head *bh ,unsigned int t_tid)
@@ -308,7 +275,6 @@ static int journal_submit_data_buffers(journal_t *journal,
 		smp_mb();
 		wake_up_bit(&jinode->i_flags, __JI_COMMIT_RUNNING);
 		/*###############BY_DOUBLE_HH################*/
-		jbd_debug(3, "Traverse t_inode_list\n");
 		the_list_length += 1 ;
 		/*###############BY_DOUBLE_HH##############*/
 	}
@@ -353,7 +319,6 @@ static int journal_finish_inode_data_buffers(journal_t *journal,
 		smp_mb();
 		wake_up_bit(&jinode->i_flags, __JI_COMMIT_RUNNING);
 		/*##############BYDOUBLE_HH#################*/
-		jbd_debug(3, "Traverse t_inode_list\n");
 		the_list_length += 1 ;
 		/*###############BYDOUBLE_HH##############*/
 	}
@@ -442,17 +407,17 @@ void jbd2_journal_commit_transaction(journal_t *journal)
 	int bufs;
 	int flags;
 	int err;
-	//unsigned long long blocknr;
+	unsigned long long blocknr;
 	ktime_t start_time;
 	u64 commit_time;
-	//char *tagp = NULL;
+	char *tagp = NULL;
 	/*journal_block_tag_t：将日志中的块和磁盘上的逻辑块对应*/
-	//journal_block_tag_t *tag = NULL;
-	//int space_left = 0;
-	//int first_tag = 0;
-	//int tag_flag;
+	journal_block_tag_t *tag = NULL;
+	int space_left = 0;
+	int first_tag = 0;
+	int tag_flag;
 	int i;
-	//int tag_bytes = journal_tag_bytes(journal);
+	int tag_bytes = journal_tag_bytes(journal);
 	struct buffer_head *cbh = NULL; /* For transactional checksums */
 	__u32 crc32_sum = ~0;
 	struct blk_plug plug;
@@ -483,13 +448,10 @@ void jbd2_journal_commit_transaction(journal_t *journal)
 		 * since journal is empty and it is ok for write to be
 		 * flushed only with transaction commit.
 		 */
-		/*###############BY_DOUBLE_HH###################*/
-		//不用更新journal 的 superblock
 		jbd2_journal_update_sb_log_tail(journal,
 						journal->j_tail_sequence,
 						journal->j_tail,
 						REQ_SYNC);
-		/*###############BY_DOUBLE_HH###################*/
 		mutex_unlock(&journal->j_checkpoint_mutex);
 	} else {
 		jbd_debug(3, "superblock not updated\n");
@@ -561,7 +523,6 @@ void jbd2_journal_commit_transaction(journal_t *journal)
 	 */
 	 /*释放事务获取的但是没有使用的journal_head，方便下一个事务使用*/
 	while (commit_transaction->t_reserved_list) {
-		jbd_debug(3,"About t_reserved_list\n");
 		jh = commit_transaction->t_reserved_list;
 		JBUFFER_TRACE(jh, "reserved, unused: refile");
 		/*
@@ -707,50 +668,47 @@ void jbd2_journal_commit_transaction(journal_t *journal)
 			continue;
 		}
 
-		/*###############BY_DOUBLE_HH###################*/
-		//不用生成描述块
 		/* Make sure we have a descriptor block in which to
 		   record the metadata buffer. */
 
-//		if (!descriptor) {
-//			J_ASSERT (bufs == 0);
-//
-//			jbd_debug(4, "JBD2: get descriptor\n");
-//
-//			descriptor = jbd2_journal_get_descriptor_buffer(
-//							commit_transaction,
-//							JBD2_DESCRIPTOR_BLOCK);
-//			if (!descriptor) {
-//				jbd2_journal_abort(journal, -EIO);
-//				continue;
-//			}
-//
-//			jbd_debug(4, "JBD2: got buffer %llu (%p)\n",
-//				(unsigned long long)descriptor->b_blocknr,
-//				descriptor->b_data);
-//
-//			/*
-//			* tagp 指向描述块中journal_header_t的下一个位置，
-//			* 即本描述块第一个journal_block_tag_t地址
-//			*/
-//			tagp = &descriptor->b_data[sizeof(journal_header_t)];
-//			/*描述块中除头部描述符后，剩余的空间大小*/
-//			space_left = descriptor->b_size -
-//						sizeof(journal_header_t);
-//			first_tag = 1;
-//			set_buffer_jwrite(descriptor);
-//			set_buffer_dirty(descriptor);
-//			wbuf[bufs++] = descriptor;
-//
-//			/* Record it so that we can wait for IO
-//                           completion later */
-//       		/*啥意思？？？*/
-//			BUFFER_TRACE(descriptor, "ph3: file as descriptor");
-//			/*###############BY_DOUBLE_HH###################*/
-//			//jbd2_file_log_bh(&log_bufs, descriptor);
-//			/*###############BY_DOUBLE_HH###################*/
-//		}
-		/*###############BY_DOUBLE_HH###################*/
+		if (!descriptor) {
+			J_ASSERT (bufs == 0);
+
+			jbd_debug(4, "JBD2: get descriptor\n");
+
+			descriptor = jbd2_journal_get_descriptor_buffer(
+							commit_transaction,
+							JBD2_DESCRIPTOR_BLOCK);
+			if (!descriptor) {
+				jbd2_journal_abort(journal, -EIO);
+				continue;
+			}
+
+			jbd_debug(4, "JBD2: got buffer %llu (%p)\n",
+				(unsigned long long)descriptor->b_blocknr,
+				descriptor->b_data);
+
+			/*
+			* tagp 指向描述块中journal_header_t的下一个位置，
+			* 即本描述块第一个journal_block_tag_t地址
+			*/
+			tagp = &descriptor->b_data[sizeof(journal_header_t)];
+			/*描述块中除头部描述符后，剩余的空间大小*/
+			space_left = descriptor->b_size -
+						sizeof(journal_header_t);
+			first_tag = 1;
+			set_buffer_jwrite(descriptor);
+			set_buffer_dirty(descriptor);
+			wbuf[bufs++] = descriptor;
+
+			/* Record it so that we can wait for IO
+                           completion later */
+       		/*啥意思？？？*/
+			BUFFER_TRACE(descriptor, "ph3: file as descriptor");
+			/*###############BY_DOUBLE_HH###################*/
+			//jbd2_file_log_bh(&log_bufs, descriptor);
+			/*###############BY_DOUBLE_HH###################*/
+		}
 
 		/*##############BY_DOUBLE_HH###############*/
 		/* Where is the buffer to be written? */
@@ -772,6 +730,8 @@ void jbd2_journal_commit_transaction(journal_t *journal)
 		 */
 		//atomic_dec(&commit_transaction->t_outstanding_credits);
 		
+		//随便构造一个blocknr
+		blocknr = journal->j_last ;
 		/*##############BY_DOUBLE_HH###############*/
 
 		/* Bump b_count to prevent truncate from stumbling over
@@ -785,8 +745,6 @@ void jbd2_journal_commit_transaction(journal_t *journal)
 		 */
 		set_bit(BH_JWrite, &jh2bh(jh)->b_state);
 		JBUFFER_TRACE(jh, "ph3: write metadata");
-
-		/*##############BY_DOUBLE_HH_BEGIN###############*/
 
 		/*
 		* Writes a metadata buffer to a given disk block.  The actual IO is not
@@ -802,76 +760,62 @@ void jbd2_journal_commit_transaction(journal_t *journal)
 		* 而new_jh则会链入到BJ_IO 队列上。
 		* journal_write_metadata_buffer()函数也会处理转义问题。
 		*/
-		//flags = jbd2_journal_write_metadata_buffer(commit_transaction,
-		//				jh, &wbuf[bufs], blocknr);
 		flags = jbd2_journal_write_metadata_buffer(commit_transaction,
-						jh, &wbuf[bufs], jh->b_bh->b_blocknr);
+						jh, &wbuf[bufs], blocknr);
 		if (flags < 0) {
 			jbd2_journal_abort(journal, flags);
 			continue;
 		}
-		
-		//wbuf[bufs] = jh->b_bh;
-		//因为new_bh->b_private = bh_in;
-		//wbuf[bufs] = (buffer_head *)(wbuf[bufs]->b_private);
-		/*##############BY_DOUBLE_HH_END###############*/
 		jbd2_file_log_bh(&io_bufs, wbuf[bufs]);
 
-		/*##############BY_DOUBLE_HH_BRGIN###############*/
+		/*##############BY_DOUBLE_HH###############*/
+		wbuf[bufs] = jh->b_bh;
+		/*##############BY_DOUBLE_HH###############*/
+
 		/* Record the new block's tag in the current descriptor
                    buffer */
 		/*生成一个描述符块中的journal_block_tag_t结构信息*/
-//		tag_flag = 0;
-//		if (flags & 1)
-//			tag_flag |= JBD2_FLAG_ESCAPE;
-//		if (!first_tag)
-//			tag_flag |= JBD2_FLAG_SAME_UUID;
-//
-//		tag = (journal_block_tag_t *) tagp;
-//		write_tag_block(journal, tag, jh2bh(jh)->b_blocknr);
-//		tag->t_flags = cpu_to_be16(tag_flag);
-//		jbd2_block_tag_csum_set(journal, tag, wbuf[bufs],
-//					commit_transaction->t_tid);
-//		/*描述符块中的地址*/
-//		tagp += tag_bytes;
-//		space_left -= tag_bytes;
-		/*##############BY_DOUBLE_HH_END###############*/
+		tag_flag = 0;
+		if (flags & 1)
+			tag_flag |= JBD2_FLAG_ESCAPE;
+		if (!first_tag)
+			tag_flag |= JBD2_FLAG_SAME_UUID;
 
+		tag = (journal_block_tag_t *) tagp;
+		write_tag_block(journal, tag, jh2bh(jh)->b_blocknr);
+		tag->t_flags = cpu_to_be16(tag_flag);
+		jbd2_block_tag_csum_set(journal, tag, wbuf[bufs],
+					commit_transaction->t_tid);
+		/*描述符块中的地址*/
+		tagp += tag_bytes;
+		space_left -= tag_bytes;
 		/*一个journal_block_tag_t对应一个块,所以要+1了*/
 		bufs++;
 
-		/*##############BY_DOUBLE_HH_BRGIN###############*/
 		/*第一个journal_block_tag_t后面要加上UUID编号*/
-//		if (first_tag) {
-//			memcpy (tagp, journal->j_uuid, 16);
-//			tagp += 16;
-//			space_left -= 16;
-//			first_tag = 0;
-//		}
-		/*##############BY_DOUBLE_HH_END###############*/
+		if (first_tag) {
+			memcpy (tagp, journal->j_uuid, 16);
+			tagp += 16;
+			space_left -= 16;
+			first_tag = 0;
+		}
 
 		/* If there's no more to do, or if the descriptor is full,
 		   let the IO rip! */
 
-		/*##############BY_DOUBLE_HH_BRGIN###############*/
-//		if (bufs == journal->j_wbufsize ||
-//		    commit_transaction->t_buffers == NULL ||
-//		    space_left < tag_bytes + 16 + csum_size) {
 		if (bufs == journal->j_wbufsize ||
-		    commit_transaction->t_buffers == NULL ) {
-		/*##############BY_DOUBLE_HH_END###############*/
+		    commit_transaction->t_buffers == NULL ||
+		    space_left < tag_bytes + 16 + csum_size) {
 
 			jbd_debug(4, "JBD2: Submit %d IOs\n", bufs);
 
 			/* Write an end-of-descriptor marker before
                            submitting the IOs.  "tag" still points to
                            the last tag we set up. */
-			/*##############BY_DOUBLE_HH_BRGIN###############*/
-			//不使用描述块了
-			//tag->t_flags |= cpu_to_be16(JBD2_FLAG_LAST_TAG);
 
-			//jbd2_descriptor_block_csum_set(journal, descriptor);
-			/*##############BY_DOUBLE_HH_END###############*/
+			tag->t_flags |= cpu_to_be16(JBD2_FLAG_LAST_TAG);
+
+			jbd2_descriptor_block_csum_set(journal, descriptor);
 start_journal_io:
 			for (i = 0; i < bufs; i++) {
 				struct buffer_head *bh = wbuf[i];
@@ -894,10 +838,14 @@ start_journal_io:
 						bh->b_size,bh->b_blocknr);
 				/*##############BYDOUBLE_HH#################*/
 
-				/*#############BY_DOUBLE_HH_BEGIN##################*/
 				//submit_bh(REQ_OP_WRITE, REQ_SYNC, bh);
-				DTN_write(bh ,commit_transaction->t_tid);
-				/*#############BY_DOUBLE_HH_END##################*/
+
+				/*#############BY_DOUBLE_HH##################*/
+				//不写描述块,从1开始
+				if (i >= 1) {
+					DTN_write(bh ,commit_transaction->t_tid);
+				}
+				/*#############BY_DOUBLE_HH##################*/
 			}
 			cond_resched();
 			stats.run.rs_blocks_logged += bufs;
@@ -994,9 +942,7 @@ start_journal_io:
 		 */
 		BUFFER_TRACE(bh, "dumping temporary bh");
 		__brelse(bh);
-		/*################BY_DOUBLE_HH_BEGIN#################*/
-		//J_ASSERT_BH(bh, atomic_read(&bh->b_count) == 0);
-		/*################BY_DOUBLE_HH_END##################*/
+		J_ASSERT_BH(bh, atomic_read(&bh->b_count) == 0);
 		free_buffer_head(bh);
 
 		/* We also have to refile the corresponding shadowed buffer */
@@ -1004,9 +950,9 @@ start_journal_io:
 		bh = jh2bh(jh);
 		clear_buffer_jwrite(bh);
 		J_ASSERT_BH(bh, buffer_jbddirty(bh));
-		/*################BY_DOUBLE_HH##################*/
+		/*################BY_DOUBLE_HH##############################*/
 		//J_ASSERT_BH(bh, !buffer_shadow(bh));
-		/*################BY_DOUBLE_HH##################*/
+		/*################BY_DOUBLE_HH##############################*/
 
 		/* The metadata is now released for reuse, but we need
                    to remember it against this transaction so that when
@@ -1057,8 +1003,7 @@ start_journal_io:
 		//err = journal_submit_commit_record(journal, commit_transaction,
 		//				&cbh, crc32_sum);
 	
-		// DTN_commit(journal->j_dev ,commit_transaction->t_tid);
-		DTN_commit(journal->j_dev, GFP_NOFS ,commit_transaction->t_tid);
+		DTN_commit(journal->j_dev ,commit_transaction->t_tid);
 		
 		//if (err)
 		//	__jbd2_journal_abort_hard(journal);

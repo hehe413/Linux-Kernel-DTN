@@ -537,6 +537,9 @@ enum nvme_opcode {
 	nvme_cmd_flush		= 0x00,
 	nvme_cmd_write		= 0x01,
 	nvme_cmd_read		= 0x02,
+	/*###############BY_DOUBLE_HH#########################*/
+	//nvme_cmd_commit		= 0x03,
+	/*###############BY_DOUBLE_HH#########################*/
 	nvme_cmd_write_uncor	= 0x04,
 	nvme_cmd_compare	= 0x05,
 	nvme_cmd_write_zeroes	= 0x08,
@@ -636,7 +639,12 @@ struct nvme_common_command {
 	__u8			flags;
 	__u16			command_id;
 	__le32			nsid;
+	/*##############BY_DOUBLE_HH####################*/
+	// Can NOT convert cdw2 to t_tid,other place used cdw2
+	//__le32			t_tid;		/*current transaction unique ID*/
 	__le32			cdw2[2];
+	//__le32			cdw1[1];
+	/*##############BY_DOUBLE_HH####################*/
 	__le64			metadata;
 	union nvme_data_ptr	dptr;
 	__le32			cdw10[6];
@@ -647,7 +655,11 @@ struct nvme_rw_command {
 	__u8			flags;
 	__u16			command_id;
 	__le32			nsid;
-	__u64			rsvd2;
+	/*##############BY_DOUBLE_HH####################*/
+	__le32			t_tid;		/*current transaction unique ID*/
+	//	__u64			rsvd2;		// __u64 to __u32
+	__u32			rsvd2;
+	/*##############################################*/
 	__le64			metadata;
 	union nvme_data_ptr	dptr;
 	__le64			slba;
