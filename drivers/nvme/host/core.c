@@ -603,6 +603,11 @@ static inline blk_status_t nvme_setup_rw(struct nvme_ns *ns,
 	cmnd->rw.nsid = cpu_to_le32(ns->head->ns_id);
 	cmnd->rw.slba = cpu_to_le64(nvme_block_nr(ns, blk_rq_pos(req)));
 	cmnd->rw.length = cpu_to_le16((blk_rq_bytes(req) >> ns->lba_shift) - 1);
+	/*#################BY_DOUBLE_HH#################################*/
+	cmnd->rw.t_tid = cpu_to_le32(req->bio->t_tid);
+	nvme_debug("current bio->bi_vcnt=%d,t_tid=%u,req_length=%u\n",req->bio->bi_vcnt,
+									req->bio->t_tid,req->__data_len);
+	/*##################################################*/
 
 	if (req_op(req) == REQ_OP_WRITE && ctrl->nr_streams)
 		nvme_assign_write_stream(ctrl, req, &control, &dsmgmt);
@@ -1107,6 +1112,9 @@ static int nvme_submit_io(struct nvme_ns *ns, struct nvme_user_io __user *uio)
 
 	switch (io.opcode) {
 	case nvme_cmd_write:
+	/*###############BY_DOUBLE_HH#########################*/
+	case nvme_cmd_commit:
+	/*###############BY_DOUBLE_HH#########################*/
 	case nvme_cmd_read:
 	case nvme_cmd_compare:
 		break;
@@ -1137,6 +1145,12 @@ static int nvme_submit_io(struct nvme_ns *ns, struct nvme_user_io __user *uio)
 	c.rw.reftag = cpu_to_le32(io.reftag);
 	c.rw.apptag = cpu_to_le16(io.apptag);
 	c.rw.appmask = cpu_to_le16(io.appmask);
+	/*###############BY_DOUBLE_HH#########################*/
+	if(io.opcode == nvme_cmd_commit) {
+		c.rw.t_tid	= cpu_to_le32(io.reftag);
+		nvme_debug("opcode=%x,t_tid=%u\n",io.opcode,io.reftag);
+	}
+	/*###############BY_DOUBLE_HH#########################*/
 
 	return nvme_submit_user_cmd(ns->queue, &c,
 			(void __user *)(uintptr_t)io.addr, length,
@@ -1320,7 +1334,8 @@ static int nvme_ioctl(struct block_device *bdev, fmode_t mode,
 	struct nvme_ns_head *head = NULL;
 	struct nvme_ns *ns;
 	int srcu_idx, ret;
-
+	
+	printk (KERN_DEBUG "%s Start\n",__func__);
 	ns = nvme_get_ns_from_disk(bdev->bd_disk, &head, &srcu_idx);
 	if (unlikely(!ns))
 		ret = -EWOULDBLOCK;

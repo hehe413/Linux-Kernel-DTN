@@ -24,6 +24,21 @@
 #include <linux/fault-inject.h>
 #include <linux/rcupdate.h>
 
+/*#################BY_DOUBLE_HH############*/
+#define MY_NVME_DEBUG
+
+#ifdef MY_NVME_DEBUG
+#define nvme_debug(f, a...)						\
+	do {								\
+		printk (KERN_DEBUG "(%s, %d): %s: ",		\
+			__FILE__, __LINE__, __func__);	\
+		printk (f, ## a);				\
+	} while (0)
+#else
+#define nvme_debug(f, a...)	/**/
+#endif
+/*#########################################*/
+
 extern unsigned int nvme_io_timeout;
 #define NVME_IO_TIMEOUT	(nvme_io_timeout * HZ)
 
