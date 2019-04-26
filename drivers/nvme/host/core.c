@@ -1114,6 +1114,7 @@ static int nvme_submit_io(struct nvme_ns *ns, struct nvme_user_io __user *uio)
 	case nvme_cmd_write:
 	/*###############BY_DOUBLE_HH#########################*/
 	case nvme_cmd_commit:
+	case nvme_cmd_abort:
 	/*###############BY_DOUBLE_HH#########################*/
 	case nvme_cmd_read:
 	case nvme_cmd_compare:
@@ -1148,8 +1149,12 @@ static int nvme_submit_io(struct nvme_ns *ns, struct nvme_user_io __user *uio)
 	/*###############BY_DOUBLE_HH#########################*/
 	if(io.opcode == nvme_cmd_commit) {
 		c.rw.t_tid	= cpu_to_le32(io.reftag);
-		nvme_debug("opcode=%x,t_tid=%u\n",io.opcode,io.reftag);
-	}
+		nvme_debug("commit opcode=%x,t_tid=%u\n",io.opcode,io.reftag);
+	} 
+	else if(io.opcode == nvme_cmd_abort) {
+		c.rw.t_tid	= cpu_to_le32(io.reftag);
+		nvme_debug("abort opcode=%x,t_tid=%u\n",io.opcode,io.reftag);
+	} 
 	/*###############BY_DOUBLE_HH#########################*/
 
 	return nvme_submit_user_cmd(ns->queue, &c,

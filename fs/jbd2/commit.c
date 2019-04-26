@@ -29,6 +29,19 @@
 #include <linux/nvme_ioctl.h>
 #include <linux/buffer_head.h>
 
+void DTN_abort(struct block_device *bdev ,unsigned int t_tid)
+{
+	struct nvme_user_io cmd = {
+		/*使用一个新的IO command opcode,表示abort操作*/
+		.opcode = 0x41,
+		/*借助reftag来传递t_tid，在底层，只要检测到opcode == 0x41,
+		* 则只要通过reftag字段取到这个t_tid*/
+		.reftag = t_tid,
+	};	
+	//bdev->bd_disk->fops->ioctl(bdev ,666 ,NVME_IOCTL_SUBMIT_IO ,&cmd);
+	__blkdev_driver_ioctl(bdev ,666 ,NVME_IOCTL_SUBMIT_IO ,(unsigned long)&cmd);
+}
+
 void DTN_commit(struct block_device *bdev ,unsigned int t_tid)
 {
 	struct nvme_user_io cmd = {
@@ -409,17 +422,17 @@ void jbd2_journal_commit_transaction(journal_t *journal)
 	int bufs;
 	int flags;
 	int err;
-	unsigned long long blocknr;
+	/* unsigned long long blocknr; */
 	ktime_t start_time;
 	u64 commit_time;
-	char *tagp = NULL;
+	/* char *tagp = NULL; */
 	/*journal_block_tag_t：将日志中的块和磁盘上的逻辑块对应*/
-	journal_block_tag_t *tag = NULL;
-	int space_left = 0;
-	int first_tag = 0;
-	int tag_flag;
+	/* journal_block_tag_t *tag = NULL; */
+	/* int space_left = 0; */
+	/* int first_tag = 0; */
+	/* int tag_flag; */
 	int i;
-	int tag_bytes = journal_tag_bytes(journal);
+	/* int tag_bytes = journal_tag_bytes(journal); */
 	struct buffer_head *cbh = NULL; /* For transactional checksums */
 	__u32 crc32_sum = ~0;
 	struct blk_plug plug;

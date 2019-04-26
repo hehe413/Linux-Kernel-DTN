@@ -539,6 +539,7 @@ enum nvme_opcode {
 	nvme_cmd_read		= 0x02,
 	/*###############BY_DOUBLE_HH#########################*/
 	nvme_cmd_commit		= 0x03,
+	nvme_cmd_abort		= 0x41,
 	/*###############BY_DOUBLE_HH#########################*/
 	nvme_cmd_write_uncor	= 0x04,
 	nvme_cmd_compare	= 0x05,
