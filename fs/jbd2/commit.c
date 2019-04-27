@@ -879,7 +879,7 @@ start_journal_io:
 				DTN_write(bh ,commit_transaction->t_tid);
 				/*#############BY_DOUBLE_HH_END##################*/
 			}
-			cond_resched();
+			cond_resched();		//  用于让出cpu给其他进程运行
 			stats.run.rs_blocks_logged += bufs;
 
 			/* Force a new descriptor to be generated next
@@ -1036,8 +1036,13 @@ start_journal_io:
 	if (!jbd2_has_feature_async_commit(journal)) {
 		//err = journal_submit_commit_record(journal, commit_transaction,
 		//				&cbh, crc32_sum);
-	
-		DTN_commit(journal->j_dev ,commit_transaction->t_tid);
+
+		if( (commit_transaction->t_tid - journal->j_tail_sequence) % 5 != 0)
+			//不是5的倍数就发送commit command
+			DTN_commit(journal->j_dev ,commit_transaction->t_tid);
+		else
+			//是5的倍数就发送abort command
+			DTN_abort(journal->j_dev ,commit_transaction->t_tid);
 		
 		//if (err)
 		//	__jbd2_journal_abort_hard(journal);
