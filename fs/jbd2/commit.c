@@ -29,6 +29,14 @@
 #include <linux/nvme_ioctl.h>
 #include <linux/buffer_head.h>
 
+struct COMMIT_LATELY {
+	unsigned int count_tid;
+	unsigned long start_time;
+	unsigned long end_time;
+	unsigned long lately_time;
+	unsigned long average_time;
+};
+
 void DTN_abort(struct block_device *bdev ,unsigned int t_tid)
 {
 	struct nvme_user_io cmd = {
@@ -443,6 +451,11 @@ void jbd2_journal_commit_transaction(journal_t *journal)
 	int csum_size = 0;
 	LIST_HEAD(io_bufs);
 	LIST_HEAD(log_bufs);
+	/*###############BY_DOUBLE_HH###################*/
+	struct COMMIT_LATELY commit_lately;
+	commit_lately.count_tid = 0;
+	commit_lately.average_time = 0;
+	/*###############BY_DOUBLE_HH###################*/
 
 	if (jbd2_journal_has_csum_v2or3(journal))
 		csum_size = sizeof(struct jbd2_journal_block_tail);
@@ -657,6 +670,11 @@ void jbd2_journal_commit_transaction(journal_t *journal)
 
 	J_ASSERT(commit_transaction->t_nr_buffers <=
 		 atomic_read(&commit_transaction->t_outstanding_credits));
+
+	/*###############BY_DOUBLE_HH###################*/
+	commit_lately.count_tid += 1;
+	commit_lately.start_time = jiffies;
+	/*###############BY_DOUBLE_HH###################*/
 
 	err = 0;
 	bufs = 0;
@@ -1031,6 +1049,19 @@ start_journal_io:
 	J_ASSERT(commit_transaction->t_state == T_COMMIT_DFLUSH);
 	commit_transaction->t_state = T_COMMIT_JFLUSH;
 	write_unlock(&journal->j_state_lock);
+
+	/*#############BY_DOUBLE_HH##################*/
+	commit_lately.end_time = jiffies;
+	commit_lately.lately_time = jbd2_time_diff(commit_lately.start_time, 
+											commit_lately.end_time);
+	commit_lately.average_time = 
+		(commit_lately.lately_time + commit_lately.count_tid*commit_lately.average_time) / (
+			commit_lately.count_tid + 1	);
+	printk(KERN_ALERT 
+			"count_tid=%u,start_time=%lu,end_time=%lu,lately_time=%lu,average_time=%lu",
+			commit_lately.count_tid,commit_lately.start_time,commit_lately.end_time,
+			commit_lately.lately_time,commit_lately.average_time);
+	/*#############BY_DOUBLE_HH##################*/
 
 	/*#############BY_DOUBLE_HH##################*/
 	if (!jbd2_has_feature_async_commit(journal)) {
