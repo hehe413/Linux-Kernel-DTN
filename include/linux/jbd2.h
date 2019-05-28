@@ -729,6 +729,16 @@ struct transaction_stats_s {
 	struct transaction_run_stats_s run;
 };
 
+/*###############BY_DOUBLE_HH###################*/
+struct COMMIT_LATELY {
+	unsigned int count_tid;
+	ktime_t start_time;
+	ktime_t end_time;
+	unsigned long lately_time;
+	unsigned long average_time;
+};
+/*###############BY_DOUBLE_HH###################*/
+
 static inline unsigned long
 jbd2_time_diff(unsigned long start, unsigned long end)
 {
@@ -1151,6 +1161,11 @@ struct journal_s
 	 */
 	struct lockdep_map	j_trans_commit_map;
 #endif
+
+	/*###############BY_DOUBLE_HH###################*/
+	struct COMMIT_LATELY commit_lately;
+	/*###############BY_DOUBLE_HH###################*/
+
 };
 
 #define jbd2_might_wait_for_commit(j) \
