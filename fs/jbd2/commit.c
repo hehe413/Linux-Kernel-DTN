@@ -1040,15 +1040,16 @@ start_journal_io:
 	/*#############BY_DOUBLE_HH##################*/	
 	journal->commit_lately.end_time = ktime_get();
 	journal->commit_lately.lately_time = ktime_to_ns(ktime_sub(journal->commit_lately.end_time, 
-														journal->commit_lately.start_time);
+														journal->commit_lately.start_time));
 	journal->commit_lately.average_time = 
 		(journal->commit_lately.lately_time + journal->commit_lately.count_tid*journal->commit_lately.average_time)  
 									/	( journal->commit_lately.count_tid + 1);
 	
 	printk(KERN_ALERT 
 			"count_tid=%u,start_time=%lu,end_time=%lu,lately_time=%lu,average_time=%lu",
-			journal->commit_lately.count_tid,journal->commit_lately.start_time,journal->commit_lately.end_time,
-			journal->commit_lately.lately_time,journal->commit_lately.average_time);
+			journal->commit_lately.count_tid,(unsigned long)journal->commit_lately.start_time,
+			(unsigned long)journal->commit_lately.end_time,journal->commit_lately.lately_time,
+			journal->commit_lately.average_time);
 	/*#############BY_DOUBLE_HH##################*/
 
 	/*#############BY_DOUBLE_HH##################*/
