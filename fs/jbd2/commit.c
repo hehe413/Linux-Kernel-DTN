@@ -659,7 +659,6 @@ void jbd2_journal_commit_transaction(journal_t *journal)
 		 atomic_read(&commit_transaction->t_outstanding_credits));
 
 	/*###############BY_DOUBLE_HH###################*/	
-	journal->commit_lately.count_tid += 1;
 	journal->commit_lately.start_time = ktime_get();
 	/*###############BY_DOUBLE_HH###################*/
 
@@ -1044,7 +1043,8 @@ start_journal_io:
 	journal->commit_lately.average_time = 
 		(journal->commit_lately.lately_time + journal->commit_lately.count_tid*journal->commit_lately.average_time)  
 									/	( journal->commit_lately.count_tid + 1);
-	
+	journal->commit_lately.count_tid += 1;
+							
 	printk(KERN_ALERT 
 			"count_tid=%u,start_time=%lu,end_time=%lu,lately_time=%lu,average_time=%lu",
 			journal->commit_lately.count_tid,(unsigned long)journal->commit_lately.start_time,
