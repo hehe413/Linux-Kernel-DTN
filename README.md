@@ -4,5 +4,5 @@
 
 ## Papers
 
-[paper1](Papers/fast18-son.pdf)
-
+1. [paper1](Papers/fast18-son.pdf)
+2. [paper1-slides](Papers/fast18_slides_son.pdf)
