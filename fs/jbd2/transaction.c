@@ -1857,6 +1857,11 @@ static void __jbd2_journal_temp_unlink_buffer(struct journal_head *jh)
 	transaction_t *transaction;
 	struct buffer_head *bh = jh2bh(jh);
 
+	/*##################BY_DOUBLE_HH Start############# */
+	jbd_debug(3, "jh->b_jlist = %d,jh->b_transaction=%p\n",
+							jh->b_jlist,jh->b_transaction);
+	/*##################BY_DOUBLE_HH End############### */
+
 	J_ASSERT_JH(jh, jbd_is_locked_bh_state(bh));
 	transaction = jh->b_transaction;
 	if (transaction)
@@ -2337,6 +2342,7 @@ int jbd2_journal_invalidatepage(journal_t *journal,
 
 /*
  * File a buffer on the given transaction list.
+ * 在给定事务列表中设置缓冲区。
  */
 void __jbd2_journal_file_buffer(struct journal_head *jh,
 			transaction_t *transaction, int jlist)
@@ -2370,6 +2376,11 @@ void __jbd2_journal_file_buffer(struct journal_head *jh,
 		    test_clear_buffer_jbddirty(bh))
 			was_dirty = 1;
 	}
+
+	/*##################BY_DOUBLE_HH Start############# */
+	jbd_debug(3, "jlist = %d,jh->b_transaction=%p\n",jlist,
+										jh->b_transaction);
+	/*##################BY_DOUBLE_HH End############### */
 
 	if (jh->b_transaction)
 		__jbd2_journal_temp_unlink_buffer(jh);

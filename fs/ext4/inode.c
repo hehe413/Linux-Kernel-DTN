@@ -1286,6 +1286,7 @@ retry_grab:
 	unlock_page(page);
 
 retry_journal:
+	/* 只是为了获取一个handle */
 	handle = ext4_journal_start(inode, EXT4_HT_WRITE_PAGE, needed_blocks);
 	if (IS_ERR(handle)) {
 		put_page(page);
@@ -1315,7 +1316,7 @@ retry_journal:
 		ret = __block_write_begin(page, pos, len,
 					  ext4_get_block_unwritten);
 	else
-		ret = __block_write_begin(page, pos, len, ext4_get_block);
+		ret = __block_write_begin(page, pos, len, ext4_get_block);	/*有JBD2时，走这里*/
 #endif
 	if (!ret && ext4_should_journal_data(inode)) {
 		ret = ext4_walk_page_buffers(handle, page_buffers(page),
