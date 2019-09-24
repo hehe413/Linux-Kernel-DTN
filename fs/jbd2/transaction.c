@@ -27,6 +27,7 @@
 #include <linux/bug.h>
 #include <linux/module.h>
 #include <linux/sched/mm.h>
+#include <linux/atomic.h>
 
 #include <trace/events/jbd2.h>
 
@@ -1461,9 +1462,13 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
 	J_ASSERT_JH(jh, jh->b_frozen_data == NULL);
 
 	JBUFFER_TRACE(jh, "file as BJ_Metadata");
-	spin_lock(&journal->j_list_lock);
-	__jbd2_journal_file_buffer(jh, transaction, BJ_Metadata);
-	spin_unlock(&journal->j_list_lock);
+	/*##################BY_DOUBLE_HH Start############# */
+	jbd_debug(3, "Lock-free add jh here:jh=%p\n",jh);
+	//spin_lock(&journal->j_list_lock);
+	//__jbd2_journal_file_buffer(jh, transaction, BJ_Metadata);
+	//spin_unlock(&journal->j_list_lock);
+	__jbd2_journal_file_buffer_List_Lock_Free(jh, transaction, BJ_Metadata);
+	/*##################BY_DOUBLE_HH End############### */
 out_unlock_bh:
 	jbd_unlock_bh_state(bh);
 out:
@@ -1819,6 +1824,23 @@ __blist_add_buffer(struct journal_head **list, struct journal_head *jh)
 	}
 }
 
+/*##################BY_DOUBLE_HH Start############# */
+static inline void
+__blist_add_buffer_List_Lock_Free(struct journal_head **head, 
+											struct journal_head **tail, 
+											struct journal_head *jh)
+{
+	jh->b_tprev = atomic64_xchg(&(*tail),jh);
+	if(jh->b_tprev == NULL) {
+		*head = jh;
+	}
+	else {
+		jh->b_tprev->b_tnext = jh;
+	}
+	(*tail)->b_tnext = NULL;
+}
+/*##################BY_DOUBLE_HH End############# */
+
 /*
  * Remove a buffer from a transaction list, given the transaction's list
  * head pointer.
@@ -1839,6 +1861,22 @@ __blist_del_buffer(struct journal_head **list, struct journal_head *jh)
 	jh->b_tprev->b_tnext = jh->b_tnext;
 	jh->b_tnext->b_tprev = jh->b_tprev;
 }
+
+/*##################BY_DOUBLE_HH Start############# */
+static inline void
+__blist_del_buffer_List_Lock_Free(struct journal_head **head, 
+											struct journal_head **tail, 
+											struct journal_head *jh)
+{
+	if (*list == jh) {
+		*list = jh->b_tnext;
+		if (*list == jh)
+			*list = NULL;
+	}
+	jh->b_tprev->b_tnext = jh->b_tnext;
+	jh->b_tnext->b_tprev = jh->b_tprev;
+}
+/*##################BY_DOUBLE_HH End############# */
 
 /*
  * Remove a buffer from the appropriate transaction list.
@@ -1897,6 +1935,67 @@ static void __jbd2_journal_temp_unlink_buffer(struct journal_head *jh)
 	else if (test_clear_buffer_jbddirty(bh))
 		mark_buffer_dirty(bh);	/* Expose it to the VM */
 }
+
+/*##################BY_DOUBLE_HH Start############# */
+/*
+ * Remove a buffer from the appropriate transaction list.
+ *
+ * Note that this function can *change* the value of
+ * bh->b_transaction->t_buffers, t_forget, t_shadow_list, t_log_list or
+ * t_reserved_list.  If the caller is holding onto a copy of one of these
+ * pointers, it could go bad.  Generally the caller needs to re-read the
+ * pointer from the transaction_t.
+ *
+ * Called under j_list_lock.	xx!!!
+ * 无锁链表
+ */
+static void __jbd2_journal_temp_unlink_buffer_List_Lock_Free(struct journal_head *jh)
+{
+	struct journal_head **list = NULL;
+	transaction_t *transaction;
+	struct buffer_head *bh = jh2bh(jh);
+
+	/*##################BY_DOUBLE_HH Start############# */
+	jbd_debug(3, "jh->b_jlist = %d,jh->b_transaction=%p\n",
+							jh->b_jlist,jh->b_transaction);
+	/*##################BY_DOUBLE_HH End############### */
+
+	J_ASSERT_JH(jh, jbd_is_locked_bh_state(bh));
+	transaction = jh->b_transaction;
+	if (transaction)
+		assert_spin_locked(&transaction->t_journal->j_list_lock);
+
+	J_ASSERT_JH(jh, jh->b_jlist < BJ_Types);
+	if (jh->b_jlist != BJ_None)
+		J_ASSERT_JH(jh, transaction != NULL);
+
+	switch (jh->b_jlist) {
+	case BJ_None:
+		return;
+	case BJ_Metadata:
+		transaction->t_nr_buffers--;
+		J_ASSERT_JH(jh, transaction->t_nr_buffers >= 0);
+		list = &transaction->t_buffers;
+		break;
+	case BJ_Forget:
+		list = &transaction->t_forget;
+		break;
+	case BJ_Shadow:
+		list = &transaction->t_shadow_list;
+		break;
+	case BJ_Reserved:
+		list = &transaction->t_reserved_list;
+		break;
+	}
+
+	__blist_del_buffer(list, jh);
+	jh->b_jlist = BJ_None;
+	if (transaction && is_journal_aborted(transaction->t_journal))
+		clear_buffer_jbddirty(bh);
+	else if (test_clear_buffer_jbddirty(bh))
+		mark_buffer_dirty(bh);	/* Expose it to the VM */
+}
+/*##################BY_DOUBLE_HH End############# */
 
 /*
  * Remove buffer from all transactions.
@@ -2414,6 +2513,117 @@ void __jbd2_journal_file_buffer(struct journal_head *jh,
 	if (was_dirty)
 		set_buffer_jbddirty(bh);
 }
+
+
+/*##################BY_DOUBLE_HH Start############# */
+/*
+ * File a buffer on the given transaction list.
+ * 在给定事务列表中设置缓冲区(无锁链表)。
+ */
+void __jbd2_journal_file_buffer_List_Lock_Free(struct journal_head *jh,
+			transaction_t *transaction, int jlist)
+{
+	//struct journal_head **list = NULL;
+	int was_dirty = 0;
+	struct buffer_head *bh = jh2bh(jh);
+
+	J_ASSERT_JH(jh, jbd_is_locked_bh_state(bh));
+	/*##################BY_DOUBLE_HH Start############# */
+	//assert_spin_locked(&transaction->t_journal->j_list_lock);
+	/*##################BY_DOUBLE_HH End############### */
+
+	/*##################BY_DOUBLE_HH Start############# */
+	atomic_set(&(jh->removed), jh_not_removed_from_list);
+	/*##################BY_DOUBLE_HH End############### */
+
+	J_ASSERT_JH(jh, jh->b_jlist < BJ_Types);
+	J_ASSERT_JH(jh, jh->b_transaction == transaction ||
+				jh->b_transaction == NULL);
+
+	if (jh->b_transaction && jh->b_jlist == jlist)
+		return;
+
+	if (jlist == BJ_Metadata || jlist == BJ_Reserved ||
+	    jlist == BJ_Shadow || jlist == BJ_Forget) {
+		/*
+		 * For metadata buffers, we track dirty bit in buffer_jbddirty
+		 * instead of buffer_dirty. We should not see a dirty bit set
+		 * here because we clear it in do_get_write_access but e.g.
+		 * tune2fs can modify the sb and set the dirty bit at any time
+		 * so we try to gracefully handle that.
+		 */
+		if (buffer_dirty(bh))
+			warn_dirty_buffer(bh);
+		if (test_clear_buffer_dirty(bh) ||
+		    test_clear_buffer_jbddirty(bh))
+			was_dirty = 1;
+	}
+
+	/*##################BY_DOUBLE_HH Start############# */
+	jbd_debug(3, "jlist = %d,jh->b_transaction=%p\n",jlist,
+										jh->b_transaction);
+	/*##################BY_DOUBLE_HH End############### */
+
+	if (jh->b_transaction) {
+		/*##################BY_DOUBLE_HH Start############# */
+		spin_lock(&transaction->t_journal->j_list_lock);
+		__jbd2_journal_temp_unlink_buffer(jh);
+		spin_unlock(&transaction->t_journal->j_list_lock);
+		/*##################BY_DOUBLE_HH End############### */
+	}
+	else
+		jbd2_journal_grab_journal_head(bh);
+	jh->b_transaction = transaction;
+
+	switch (jlist) {
+	case BJ_None:
+		J_ASSERT_JH(jh, !jh->b_committed_data);
+		J_ASSERT_JH(jh, !jh->b_frozen_data);
+		return;
+	case BJ_Metadata:
+		/*##################BY_DOUBLE_HH Start############# */
+		//transaction->t_nr_buffers++;
+		//list = &transaction->t_buffers;
+		
+		atomic_inc(&(transaction->t_nr_buffers));
+		__blist_add_buffer_List_Lock_Free(&(transaction->t_buffers), 
+										&(transaction->t_buffers_tail), jh);
+		/*##################BY_DOUBLE_HH End############### */
+		break;
+	case BJ_Forget:
+		/*##################BY_DOUBLE_HH Start############# */
+		//list = &transaction->t_forget;
+		__blist_add_buffer_List_Lock_Free(&(transaction->t_forget),
+										&(transaction->t_forget_tail),jh);
+		/*##################BY_DOUBLE_HH End############### */
+		break;
+	case BJ_Shadow:
+		/*##################BY_DOUBLE_HH Start############# */
+		//list = &transaction->t_shadow_list;
+		__blist_add_buffer_List_Lock_Free(&(transaction->t_shadow_list),
+										&(transaction->t_shadow_list_tail),jh);
+		/*##################BY_DOUBLE_HH End############### */
+		break;
+	case BJ_Reserved:
+		/*##################BY_DOUBLE_HH Start############# */
+		//list = &transaction->t_reserved_list;
+		__blist_add_buffer_List_Lock_Free(&(transaction->t_reserved_list),
+										&(transaction->t_reserved_list_tail),jh);
+		/*##################BY_DOUBLE_HH End############### */
+		break;
+	}
+
+	/*##################BY_DOUBLE_HH Start############# */
+	//__blist_add_buffer(list, jh);
+	/*##################BY_DOUBLE_HH End############### */
+	
+	jh->b_jlist = jlist;
+
+	if (was_dirty)
+		set_buffer_jbddirty(bh);
+}
+/*##################BY_DOUBLE_HH End############### */
+
 
 void jbd2_journal_file_buffer(struct journal_head *jh,
 				transaction_t *transaction, int jlist)

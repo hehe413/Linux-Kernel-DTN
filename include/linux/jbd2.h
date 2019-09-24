@@ -537,7 +537,7 @@ struct transaction_chp_stats_s {
  */
 
 /*
- * Lock ranking:
+ * Lock ranking: 先后依存还是后先依存？
  *
  *    j_list_lock
  *      ->jbd_lock_bh_journal_head()	(This is "innermost")
@@ -590,18 +590,22 @@ struct transaction_s
 
 	/* Number of buffers on the t_buffers list [j_list_lock] */
 	int			t_nr_buffers;
-
+	
+	/*##################BY_DOUBLE_HH Start############# */
 	/*
 	 * Doubly-linked circular list of all buffers reserved but not yet
 	 * modified by this transaction [j_list_lock]
 	 */
 	struct journal_head	*t_reserved_list;
+	struct journal_head	*t_reserved_list_tail;
 
 	/*
 	 * Doubly-linked circular list of all metadata buffers owned by this
 	 * transaction [j_list_lock]
 	 */
 	struct journal_head	*t_buffers;
+	struct journal_head	*t_buffers_tail;
+	/*##################BY_DOUBLE_HH End############### */
 
 	/*
 	 * Doubly-linked circular list of all forget buffers (superseded
@@ -609,6 +613,7 @@ struct transaction_s
 	 * [j_list_lock]
 	 */
 	struct journal_head	*t_forget;
+	struct journal_head	*t_forget_tail;
 
 	/*
 	 * Doubly-linked circular list of all buffers still to be flushed before
@@ -628,6 +633,7 @@ struct transaction_s
 	 * list match each other one for one at all times. [j_list_lock]
 	 */
 	struct journal_head	*t_shadow_list;
+	struct journal_head	*t_shadow_list_tail;
 
 	/*
 	 * List of inodes whose data we've modified in data=ordered mode.

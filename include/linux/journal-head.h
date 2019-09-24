@@ -14,6 +14,8 @@
 typedef unsigned int		tid_t;		/* Unique transaction ID */
 typedef struct transaction_s	transaction_t;	/* Compound transaction type */
 
+#define jh_was_removed_from_list 1
+#define jh_not_removed_from_list 0
 
 struct buffer_head;
 
@@ -102,6 +104,10 @@ struct journal_head {
 
 	/* Trigger type for the committing transaction's frozen data */
 	struct jbd2_buffer_trigger_type *b_frozen_triggers;
+
+	/*##################BY_DOUBLE_HH Start############# */
+	/* 表示当前jh是否被删除的标志位,1:被删除，0:未被删除*/
+	unsigned removed;
 };
 
 #endif		/* JOURNAL_HEAD_H_INCLUDED */
